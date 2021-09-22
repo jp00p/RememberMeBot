@@ -18,27 +18,6 @@ from fuzzywuzzy import fuzz
 tmdb.API_KEY = os.getenv('TMDB_KEY')
 TMDB_IMG_PATH = "https://image.tmdb.org/t/p/w500"
  
-
-#search = tmdb.Search()
-#genre = tmdb.Genres(id=27)
-#movies = []
-#for i in range(1,30):
-#  movies.append(genre.movies(language='EN', page=i,))
-#  asyncio.sleep(5)
-#print(movies)
-
-# register - get added to crew - get death clock
-
-# each message in the normal crew chat removes 1 tick from death clock
-# if death clock reaches zero move person into ghost channel
-# bot sends random spooky messages to the normal chat
-# bot will sometimes take a random message from the ghost chat and insert it into normal chat
-
-#roles
-#cadet can see register
-#registering adds Haunted Crew (1) role, giving access to normal chat and removing ability to register
-#ghosts get Haunted Crew (1) removed, Haunted Crew (2) role added
-
 register_channel = 882804214588407901
 crew_channel = 882804258049757224
 ghost_channel = 882804279180689470
@@ -58,8 +37,10 @@ greetings = [
   'We’re excited to see you here, {0}.  Very excited.',
   'Welcome {0}! The ceremony begins at dawn.',
   'A sickening crunch is heard as {0} opens the doors.',
-  'Greetings, {0}!  Please be mindful of the sacred bones!',
-  'Welcome aboard, {0}. STAY AWAY FROM DECK 6'
+  'Greetings, {0}!  Please be mindful of any sacred relics!',
+  'Welcome aboard, {0}. STAY AWAY FROM DECK 6',
+  'We have been waiting for you, {0}.',
+  'There was a slight transporter malfunction bringing you aboard, {0}. I\'m sure it\'s nothing to worry about.',
 ]
 
 alert_intros = [
@@ -70,21 +51,27 @@ alert_intros = [
 ]
 
 alerts = [
-  'We need someone to investigate a strange sound in Jeffries tube 3',
+  'For your own safety, please keep out of any subliminal or non-Euclidian Jeffries tubes.',
   'Please report to the Captain\'s office for your final review',
-  'We have reports of screaming on Deck 12.  Can you check it out?',
-  'Red alert! The ship is approaching an area of warped space.',
-  'Attention all senior staff: please report to deck 6 for The Ritual.', 
-  'Attention crew: one of the creatures has escaped again.  Please report any sightings to your commanding occult officer.',
+  'We have reports of screaming on deck 13. Believe nothing.',
+  'Attention all senior staff: please report to deck 13 for The Ritual.', 
+  'Attention all containment officers: We have a code VOID on deck 13. This is not a drill.',
   'Until further notice, the morgue is off limits to all officers.',
   'Do not attempt to communicate with anyone you do not recognize.',
   'We are watching you.',
-  'There are reports of crewmembers dissolving into the floors. Watch your step!',
+  'We\'re coming to get you...',
+  'There are unconfirmed reports of crewmembers dissolving into the floors. Mind your step!',
   'Are you following the rules?',
-  'Please keep away from the windows until further notice.',
-  'Ignore those sounds. There\'s no cause for alarm.',
-  'Will anyone with necromancy experience please report to Sicks Bay?',
+  'Please keep away from all windows or portholes until further notice.',
+  'There\'s no cause for alarm.',
+  'Will anyone with necromancy experience please report to deck 13?',
   'We are aware of the fatalities with the malfunctioning turbolifts and are actively looking into the issue. Have a nice day!',
+  'Please report any untranslated or Eldritch languages your universal translator is unable to handle.',
+  'It’s happening again!',
+  'Transporters are currently down due to genetic mutation-related malfunctions.',
+  'New in the replimat: We\'re grilling a kind of meat I bet you\'ve never tried before!',
+  'The Captain has his companions, fellow devils, to admire and encourage him; but I am solitary and detested.',
+  'TRICK OR TREAT!!!'
 ]
 
 flavor = [
@@ -97,7 +84,9 @@ flavor = [
   'You glance out the window and notice the stars are gone.',
   'The PADD you\'re holding starting spitting out weird runes and shapes.',
   'You hear the sound of a malfunctioning turbolift whooshing by.',
-  'The smell of sulfur wafts down the hallway.'
+  'The smell of sulfur wafts down the hallway.',
+  'You see movement from the corner of your eye. Probably nothing.',
+  'The sound of metal against bone can be heard somewhere.'
 ]
 
 jobs = [
@@ -114,32 +103,20 @@ events = [
   }
 ]
 
-roman = [
-  ["I", 1],
-  ["II", 2],
-  ["III", 3],
-  ["IV", 4],
-  ["V",  5],
-  ["VI", 6],
-  ["VII", 7],
-  ["VIII", 8],
-  ["IX", 9],
-  ["X", 10]
-]
-
-
+# read a file line by line into an array
 def readFile(fileName):
-  fileObj = open(fileName, "r") #opens the file in read mode
-  words = fileObj.read().splitlines() #puts the file into an array
+  fileObj = open(fileName, "r") # opens the file in read mode
+  words = fileObj.read().splitlines() # puts the file into an array
   fileObj.close()
   return words
 
-spooky_words_master = readFile("spooky_words")
-movies_master = readFile("auto_movie_list")
 
-# ghosts = db["ghosts"]
-# crew = db["crew"]
-# db[user_id] = messages_remaining [10-20]
+spooky_words_master = readFile("./lore/spooky_words")
+movies_master = readFile("./lore/auto_movie_list")
+drinks_master = readFile("./lore/drinks")
+advice_master = readFile("./lore/advice")
+glassware_master = readFile("./lore/glassware")
+
 
 class SpookyClient(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -213,18 +190,18 @@ class SpookyClient(discord.Client):
 
         self.ship_tasks = {}
 
-        # create list of all tasks for matching later
-        for loc in self.locations:
-          for t in self.locations[loc]["tasks"]:
-            self.ship_tasks[t] = loc
+       
 
-        print(self.ship_tasks)
-        
+        # ship status        
         self.ship = {
           "shields" : "On", # shields on or off
           "speed" : 0,
           "warp_core" : "Off", # warp core on or off
         }
+
+        self.jazz_active = False
+        self.jazz_counter = 0
+        self.jazz_threshold = 0
        
 
         # setup DB keys
@@ -234,35 +211,38 @@ class SpookyClient(discord.Client):
           if s not in db_keys: 
             db[s] = []
         
+        unlocks = [
+          "shop_unlocked", 
+          "quiz_unlocked", 
+          "movies_unlocked", 
+          "movies_level_1", 
+          "movies_level_2", 
+          "movies_level_3", 
+          "movie_hint_1", 
+          "movie_hint_2"
+          "quiz_hint",
+        ]
+
         if "crystals" not in db_keys:
           db["crystals"] = 15
-        if "holodeck" not in db_keys:
-          db["holodeck"] = False
-        if "shop_unlocked" not in db_keys:
-          db["shop_unlocked"] = False
-        if "quiz_unlocked" not in db_keys:
-          db["quiz_unlocked"] = False
-        if "movies_unlocked" not in db_keys:
-          db["movies_unlocked"] = False
-        if "movie_clue_1_unlocked" not in db_keys:
-          db["movie_clue_1_unlocked"] = False
-        if "movie_clue_2_unlocked" not in db_keys:
-          db["movie_clue_2_unlocked"] = False
 
+        for u in unlocks:
+          if u not in db_keys:
+            db[u] = False
+        
         #self.main_ship_loop.start()
         
     async def on_ready(self):
         print(f'Logged in as {self.user} (ID: {self.user.id})')
+        self.rebuild_ship_tasks()
         await self.change_presence(activity=discord.Game("Haunting the Hood 👻", type=3))
         self.guild = self.get_guild(689512841887481875)
         print('------')   
-        #print('Current list of bad movies:')
-        #badmovies = db["bad_movies"]
+        
         if db["shop_unlocked"] == True:
           self.unlock_shop()
-        #print(badmovies)
-        #print('------')
-
+        
+        self.main_ship_loop.start()
 
         '''  --- harvest a list of horror movies 
         discover = tmdb.Discover()
@@ -278,7 +258,27 @@ class SpookyClient(discord.Client):
           await asyncio.sleep(1)
 
         '''
+        await self.get_channel(crew_channel).send("Everyone has transported back to their personal quarters.")
 
+
+
+
+
+
+
+
+    # HANDLE REACTIONS
+    async def on_reaction_add(self, reaction, user):
+      if reaction.message.channel.id != crew_channel:
+        return
+
+      #if reaction.message == self.jazz_active:
+      #  if user.id not in db["crew"]:
+      #    await self.remove_reaction(message=reaction.message,emoji=reaction.emoji,member=user.id)
+
+
+
+    # HANDLE MESSAGES
     # most logic goes in here, listening for messages and responding
     async def on_message(self,message):
       
@@ -302,7 +302,7 @@ class SpookyClient(discord.Client):
           
           if message.author.id == 572540272563716116:
             msg = "Clearing the DB of all crew, ghosts, messages... :ghost:"
-            db["ghost_messages"] = ["i don't know what's going on and i'm scared", "they're coming to get you beverly..."]
+            db["ghost_messages"] = ["VOID"]
             crew = db["crew"]
             ghosts = db["ghosts"]
             all_crew = crew.value + ghosts.value
@@ -313,6 +313,7 @@ class SpookyClient(discord.Client):
                 del db[c]
             db["crew"] = []
             db["ghosts"] = []
+            db["crystals"] = 0
 
             for id in all_crew:
               user = await self.guild.fetch_member(id)
@@ -359,6 +360,9 @@ class SpookyClient(discord.Client):
         if message.content.startswith("!clear_wishlist"):
           db["need_to_see"] = []
           await channel.send("Wishlist cleared!")
+        
+        if message.content.startswith("!set_crystals"):
+          amt = message.content.lower().replace("!set_crystals ", "" )
           
         
         if message.content.startswith("!make_ghost"):
@@ -418,10 +422,12 @@ class SpookyClient(discord.Client):
             await channel.send("That user couldn't be found")
             return
           else:
+            username = await self.guild.fetch_member(user_id)
             user = db[user_id].value
-            msg = "crewmember " + str(user_id) + " info:"
-            msg += "\njob: " + str(user["job"])
-            msg += "\ncounter: " + str(user["counter"])
+            msg = "Crewmember " + str(user_id) + " info:"
+            msg += "\n**Name:** " + str(username.name)
+            msg += "\n**Job:** " + str(user["job"])
+            msg += "\n**Counter:** " + str(user["counter"])
             await channel.send(msg)
         
         if message.content.startswith("!send_flavor"):
@@ -502,7 +508,8 @@ class SpookyClient(discord.Client):
 
           db[message.author.id] = {
             "job" : player["job"],
-            "counter" : player["counter"]
+            "counter" : player["counter"],
+            "drinks" : player["drinks"]
           }
 
 
@@ -531,10 +538,13 @@ class SpookyClient(discord.Client):
             
 
           # handle moving
-          if message.content.startswith("move"):
+          if message.content.lower().startswith("move"):
             
             valid_locs = self.locations.keys()
             temp_loc = message.content.replace("move", "").lower().strip().replace(" ", "")
+            # bits bits bits
+            if temp_loc in ["sicksbay", "sicks bay"]:
+              temp_loc = "sickbay"
             player_id = message.author.id
             mention = message.author.mention
             current_player_location = ""
@@ -582,8 +592,6 @@ class SpookyClient(discord.Client):
               msg += mov + "\n"
             await channel.send(msg)
             
-
-
           # show the map!
           if message.content.lower() in ["map", "ship"]:
             crew_size = len(db["crew"].value)
@@ -639,7 +647,6 @@ class SpookyClient(discord.Client):
 
 
 
-
           # handle ship tasks
         
           
@@ -653,10 +660,14 @@ class SpookyClient(discord.Client):
             if attempted_loc != current_player_location:
               # player is not in the right location
               print("Player is not in the correct location to perform that task")
+              await channel.send("You're not at the right station to do that.")
             else:
 
               player = db[str(message.author.id)].value
 
+              #
+              # BRIDGE
+              #
               if attempted_loc == "bridge":
                 # BRIDGE COMMANDS
                 if player["job"] != "Command Officer":
@@ -696,7 +707,9 @@ class SpookyClient(discord.Client):
                     else:
                       await channel.send("The warp core is currently offline!")
 
-
+              #
+              # SICK BAY
+              #
               elif attempted_loc == "sickbay":
                 # SICKS BAY COMMANDS
                 if player["job"] != "Medical Officer":
@@ -705,7 +718,55 @@ class SpookyClient(discord.Client):
                   if attempted_task == "research":
                     await self.handle_research(message.author.id)
 
+              #
+              # LOUNGE
+              #
+              elif attempted_loc == "lounge":
+                crystals = db["crystals"]
 
+                if attempted_task == "drink":
+                  if crystals >= 1:
+                    db["crystals"] = crystals - 1
+                    verb = random.choice(["flip", "toss", "hand", "slip", "pass", "slide", "give"])
+                    drink_choice = random.choice(drinks_master)
+                    glass_choice = random.choice(glassware_master)
+                    msg = "You {} the bartender a memory crystal and she pours you a {} of **{}**".format(verb, glass_choice, drink_choice)
+                    player = db[str(message.author.id)].value
+                    player["drinks"] += 1
+                    db[str(message.author.id)] = player
+
+                    death = random.randint(1,100)
+                    if death >= 99:
+                      msg += "\n ...unfortunately the anomalies affecting the ship have tainted this batch and you feel yourself starting to phase into another dimension..."
+                      await self.make_ghost(message.author.id)
+                  else:
+                    msg = "You do not have enough memory crystals to tip the bartender.  Better not."
+                  await channel.send(msg)
+
+                if attempted_task == "advice":
+
+                  tellers = random.choice(["a wise senior officer", "the bartender", "a random changeling", "a random patron", "an old scientist", "a down-on-their-luck redshirt", "the ship's counsellor", "a random advice machine", "someone nearby", "the voices deep within", "scrawlings on the bathroom wall", "a fortune cookie", "an old fortune telling machine"])
+                  advice = random.choice(advice_master)
+                  msg = "You seek advice from {}.\nThey tell you:\n\n> \"{}\"".format(tellers, advice)
+
+                  await channel.send(msg)
+
+                if attempted_task == "jazz":
+                  if self.jazz_active:
+                    await channel.send("A jazz memorial is currently in progress. Please be respectful with your finger snaps!")
+                  else:
+                    self.jazz_counter = random.randint(2,5)
+                    self.jazz_threshold = random.randint(5,25)
+                    jazz_image = random.randint(1,9)
+                    await channel.send("You start the somber yet jazzy procedings for your missing friends. All crew should show their respects by reacting to the following picture with emoji they think the departed would appreciate:")
+                    image = "./nightbird/jazz{}.jpg".format(jazz_image)
+                    self.jazz_active = await channel.send(file=discord.File(image))
+
+
+
+              #
+              # WARP CORE
+              #
               elif attempted_loc == "warpcore":
                 # WARP CORE COMMANDS
                 if player["job"] != "Engineer Officer":
@@ -732,17 +793,27 @@ class SpookyClient(discord.Client):
                   if attempted_task == "eject core":
                     await channel.send("You eject the warp core and everyone dies!!! Just kidding, Happy Halloween!")
               
+              #
+              # CARGO BAY
+              #
               elif attempted_loc == "cargobay":
                 if attempted_task in ["take stock", "inventory"]:
+                  stock_chance = random.randint(1,5)
                   barrel_chance = random.randint(0,100)
-                  if barrel_chance <= 7:
+                  if barrel_chance <= 5:
                     await channel.send("As " + message.author.mention + " is taking stock of the cargo bay, a blue barrel falls right on top of their head! They seem to phase out of existence before the barrel lands...")
                     await self.make_ghost(message.author.id)
                   else:
-                    crystal_amt = random.randint(1,10)
-                    db["crystals"] += crystal_amt
-                    
-                    await channel.send("While taking stock, " +message.author.mention+" finds a surplus of " + str(crystal_amt) + " memory crystals!")
+                    if stock_chance >= 2:
+                      crystal_amt = random.randint(1,10)
+                      db["crystals"] += crystal_amt 
+                      await channel.send("While taking stock, " +message.author.mention+" finds a surplus of " + str(crystal_amt) + " memory crystals!")
+                    else:
+                      await channel.send(message.author.mention + " was unable to find anything unaccounted for in the cargo bay.")
+
+              #
+              # SHUTTLE BAY
+              #                    
               elif attempted_loc == "shuttlebay":
                 if attempted_task in ["explore", "take shuttle"]:
                   if self.ship["speed"] > 0:
@@ -760,7 +831,7 @@ class SpookyClient(discord.Client):
                       db["crystals"] += crystal_amt
                       await channel.send("...and "+message.author.mention+" returns with a bounty of " + str(crystal_amt) + " memory crystals!")
               else:
-               print("Task that can be done anywhere!")
+               print("Task that can be done anywhere! Should not see this.")
 
 
         
@@ -856,37 +927,46 @@ class SpookyClient(discord.Client):
       if channel_id == register_channel:
         # register a new crew member
         crew = db["crew"]
+        
         if message.author.id in crew:
           await message.delete()
-          return
+        else:
+          await self.register_new_crew(message.author, channel)
 
-        # add to db if they're not in there
-        crew.append(message.author.id)
-        db["crew"] = crew
-      
-        # add crew role
-        role = discord.utils.get(message.author.guild.roles, id=crew_role)
-        if role not in message.author.roles:
-          await message.author.add_roles(role)
 
+    
+    
+    # register a new user
+    async def register_new_crew(self, user, channel):
+      if user.id not in db["crew"]:
+        db["crew"].append(user.id)
+
+      # add crew role
+      role = discord.utils.get(user.guild.roles, id=crew_role)
+      if role not in user.roles:
+        await user.add_roles(role)
+
+      job = random.choice(jobs)
+      while job == self.last_job:
         job = random.choice(jobs)
-        while job == self.last_job:
-          job = random.choice(jobs)
 
-        self.last_job = job
-          
-        death_clock = random.randint(50,70)
+      self.last_job = job
+        
+      death_clock = random.randint(50,70)
 
-        db[message.author.id] = {
-          "job" : job,
-          "counter" : death_clock,
-          "location" : 0
-        }
+      db[str(user.id)] = {
+        "job" : job,
+        "counter" : death_clock,
+        "location" : 0,
+        "drinks" : 0
+      }
 
-        greeting = random.choice(greetings).format(message.author.mention)
-        greeting += "\n\nYour job is: __{0}__".format(job)
+      greeting = random.choice(greetings).format(user.mention)
+      greeting += "\n\nYour job is: __{0}__".format(job)
 
-        await channel.send(greeting)
+      await channel.send(greeting)
+
+
 
 
     # make a user a ghost
@@ -938,7 +1018,8 @@ class SpookyClient(discord.Client):
         
           db[str(user_id)] = {
             "job" : player["job"],
-            "counter" : 100
+            "counter" : 100,
+            "drinks" : player["drinks"]
           }
 
           remove_role = discord.utils.get(user.guild.roles, id=ghost_role)
@@ -1134,15 +1215,45 @@ class SpookyClient(discord.Client):
 
 
 
-    @tasks.loop(seconds=60) # task runs every x seconds
+    @tasks.loop(seconds=20) # task runs every x seconds
     async def main_ship_loop(self):
       print("Starting background task.  Hmm what to do this time...")
+      
+      if self.jazz_active:
+        print(f"Jazz counter: {self.jazz_counter}")
+        if self.jazz_counter <= 0:
+          message = await self.get_channel(crew_channel).fetch_message(self.jazz_active.id)
+          reactions = message.reactions
+          total_reactions = 0
+          for r in reactions:
+            player = await r.users().flatten()
+            for p in player:
+              if p.id in db["crew"]:
+                total_reactions += 1
+          print(f"Total reactions from crew: {total_reactions}")
+          if total_reactions >= self.jazz_threshold:
+            
+            await self.get_channel(ghost_channel).send("You hear the warbling of a trombone from across the veil...")
 
+            # ressurect a few ghosts
+            ghosts = db["ghosts"]
+            if len(ghosts) > 0:
+              max_rez = round(len(ghosts)/10)+1
+              print(f"Resurrecting up to {max_rez} ghosts")
+              lucky_ghosts = random.sample(ghosts, max_rez)
+              for ghost in lucky_ghosts:
+                await self.resurrect(ghost)
+          else:
+            await self.get_channel(crew_channel).send("While your jazz proceedings were lighthearted yet serious, nothing supernatural seems to have happened this time.")
+
+          self.jazz_active = False
+          
+        self.jazz_counter -= 1
       if self.stopped:
         print("Bot is stopped")
         return
 
-      decide = random.randint(1,10)
+      decide = random.randint(1,100)
 
       if decide == 6: 
         await self.send_creepy(self.get_channel(crew_channel))
@@ -1160,7 +1271,7 @@ class SpookyClient(discord.Client):
         print("Doin nothin' this time")
 
     @main_ship_loop.before_loop
-    async def before_shiploop_task(self):
+    async def before_ship_loop_task(self):
       await self.wait_until_ready() # wait until the bot logs in
     
 
@@ -1308,7 +1419,15 @@ class SpookyClient(discord.Client):
       db["shop_unlocked"] = False
       if self.locations['shop']:
         self.locations.pop('shop')
+        self.rebuild_ship_tasks()
       print("Shop is closed!")
+
+    def rebuild_ship_tasks(self):
+      # create list of all tasks for matching later
+      self.ship_tasks = {}
+      for loc in self.locations:
+        for t in self.locations[loc]["tasks"]:
+          self.ship_tasks[t] = loc
       
 
 client = SpookyClient()
